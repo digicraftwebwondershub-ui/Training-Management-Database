@@ -139,6 +139,7 @@
         <button class="nav-button" onclick="openTab('batch-encoding', this)">Batch Encoding</button>
         <button class="nav-button" onclick="openTab('records-management', this)">Records Management</button>
         <button class="nav-button" onclick="openTab('individual-training-record', this)">Individual Training Record</button>
+        <button class="nav-button" onclick="openTab('participants-list', this)">Participants List</button>
       </div>
       <div id="content-area">
 
@@ -264,6 +265,47 @@
                 <tbody>
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+
+        <div id="participants-list" class="tab-content">
+          <h2>Participants List</h2>
+          <div class="form-container">
+            <div class="records-filter-grid">
+              <div class="select-container">
+                <label for="participants-course-input">Training Course</label>
+                <input type="text" id="participants-course-input" class="select-input" placeholder="Search training course">
+                <div id="participants-course-dropdown" class="select-dropdown"></div>
+              </div>
+              <div class="select-container">
+                <label for="participants-date-input">Training Date</label>
+                <select id="participants-date-input" class="select-input" disabled>
+                  <option value="">Select a course first</option>
+                </select>
+              </div>
+              <button id="participants-search-btn" class="action-button" disabled>View Participants</button>
+            </div>
+            <div id="participants-list-container">
+              <table id="participants-table" class="data-table">
+                <thead>
+                  <tr>
+                    <th>No.</th>
+                    <th>Employee Number</th>
+                    <th>Employee Name</th>
+                    <th>Work Location</th>
+                    <th>FA/BU</th>
+                    <th>Position</th>
+                    <th>Level</th>
+                    <th>Company Name</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td colspan="9" style="text-align: center;">Select a training course and date to view participants.</td></tr>
+                </tbody>
+              </table>
+              <div id="participants-status-message" class="status-message"></div>
             </div>
           </div>
         </div>
@@ -592,17 +634,34 @@
           const input = document.getElementById(idPrefix + field.id);
           const dropdown = document.getElementById(idPrefix + field.id + '-dropdown');
           if (!input || !dropdown) return;
+          
+          const selectContainer = input.parentElement;
           const dataKey = field.label.toUpperCase();
           if (referenceData[dataKey]) populateDropdown(dropdown, referenceData[dataKey]);
+
           const openDropdown = () => {
             if (input.readOnly) return;
+            // Reset z-index for all other select containers within the same form
+            form.querySelectorAll('.select-container').forEach(c => c.style.zIndex = '2');
+            // Elevate the current one
+            selectContainer.style.zIndex = '3';
             filterDropdown(input, dropdown, referenceData[dataKey]);
             dropdown.classList.add('open');
           };
+
           input.addEventListener('input', openDropdown);
           input.addEventListener('focus', openDropdown);
           input.addEventListener('click', openDropdown);
-          input.addEventListener('blur', () => setTimeout(() => dropdown.classList.remove('open'), 200));
+
+          input.addEventListener('blur', () => {
+            // Use a timeout to allow click on dropdown options
+            setTimeout(() => {
+              dropdown.classList.remove('open');
+              // Reset z-index after dropdown is closed
+              selectContainer.style.zIndex = '2';
+            }, 200);
+          });
+
           dropdown.addEventListener('mousedown', (e) => selectOption(e, input, dropdown));
         });
 
@@ -834,6 +893,111 @@
         itrSearchInput.addEventListener('input', () => handleITRTypeAheadSearch(itrSearchInput, itrSearchDropdown));
         itrSearchInput.addEventListener('blur', () => setTimeout(() => itrSearchDropdown.classList.remove('open'), 200));
         document.getElementById('itr-view-record-btn').addEventListener('click', handleITRSearch);
+
+        // Participants List Tab
+        const participantsCourseInput = document.getElementById('participants-course-input');
+        const participantsCourseDropdown = document.getElementById('participants-course-dropdown');
+        const participantsDateInput = document.getElementById('participants-date-input');
+        const participantsSearchBtn = document.getElementById('participants-search-btn');
+
+        const handleParticipantsCourseSearch = () => {
+          participantsDateInput.innerHTML = '<option value="">Select a course first</option>';
+          participantsDateInput.disabled = true;
+          participantsSearchBtn.disabled = true;
+          const query = participantsCourseInput.value.trim().toLowerCase();
+          const filteredCourses = allCourseNames.filter(course =>
+            course.toLowerCase().includes(query)
+          );
+          populateDropdown(participantsCourseDropdown, filteredCourses);
+          participantsCourseDropdown.classList.add('open');
+        };
+
+        participantsCourseInput.addEventListener('input', handleParticipantsCourseSearch);
+        participantsCourseInput.addEventListener('focus', handleParticipantsCourseSearch);
+        participantsCourseInput.addEventListener('blur', () => setTimeout(() => participantsCourseDropdown.classList.remove('open'), 200));
+        
+        participantsCourseDropdown.addEventListener('mousedown', (e) => {
+          if (e.target.classList.contains('dropdown-option')) {
+            e.preventDefault();
+            const selectedCourse = e.target.dataset.value;
+            participantsCourseInput.value = selectedCourse;
+            participantsDateInput.disabled = false;
+            participantsSearchBtn.disabled = true;
+            participantsCourseDropdown.classList.remove('open');
+            getTrainingDatesForParticipants(selectedCourse);
+          }
+        });
+
+        participantsDateInput.addEventListener('change', () => {
+          participantsSearchBtn.disabled = !(participantsCourseInput.value && participantsDateInput.value);
+        });
+
+        participantsSearchBtn.addEventListener('click', handleViewParticipants);
+      }
+
+      function getTrainingDatesForParticipants(courseName) {
+        const dateDropdown = document.getElementById('participants-date-input');
+        dateDropdown.innerHTML = '<option>Loading dates...</option>';
+        google.script.run
+          .withSuccessHandler(dates => {
+            dateDropdown.innerHTML = '<option value="">Select a date</option>';
+            if (dates && dates.length > 0) {
+              dates.forEach(date => {
+                const option = new Option(date, date);
+                dateDropdown.add(option);
+              });
+            } else {
+              dateDropdown.innerHTML = '<option value="">No dates found</option>';
+            }
+          })
+          .getTrainingDatesForCourse(courseName);
+      }
+
+      function handleViewParticipants() {
+        const course = document.getElementById('participants-course-input').value;
+        const date = document.getElementById('participants-date-input').value;
+        const tableBody = document.getElementById('participants-table').querySelector('tbody');
+        const statusMessage = document.getElementById('participants-status-message');
+        const searchBtn = document.getElementById('participants-search-btn');
+
+        if (!course || !date) {
+          statusMessage.textContent = 'Please select a training course and a date.';
+          statusMessage.className = 'status-message error';
+          return;
+        }
+        
+        setButtonLoading(searchBtn, 'Loading...');
+        tableBody.innerHTML = '<tr><td colspan="9" style="text-align: center;">Loading participants...</td></tr>';
+        statusMessage.className = 'status-message';
+
+        google.script.run
+          .withSuccessHandler(participants => {
+            setButtonLoaded(searchBtn, 'View Participants');
+            tableBody.innerHTML = '';
+            if (participants && participants.length > 0) {
+              participants.forEach((p, index) => {
+                const row = tableBody.insertRow();
+                row.insertCell().textContent = index + 1;
+                row.insertCell().textContent = p.employeeNumber;
+                row.insertCell().textContent = p.employeeName;
+                row.insertCell().textContent = p.workLocation;
+                row.insertCell().textContent = p.fabu;
+                row.insertCell().textContent = p.position;
+                row.insertCell().textContent = p.level;
+                row.insertCell().textContent = p.companyName;
+                const statusCell = row.insertCell();
+                statusCell.textContent = p.status;
+                statusCell.style.color = p.status === 'Active' ? 'green' : 'red';
+              });
+            } else {
+              tableBody.innerHTML = '<tr><td colspan="9" style="text-align: center;">No participants found for this training course and date.</td></tr>';
+            }
+          })
+          .withFailureHandler(err => {
+            setButtonLoaded(searchBtn, 'View Participants');
+            tableBody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: red;">Error: ${err.message}</td></tr>`;
+          })
+          .getParticipantsList(course, date);
       }
 
       function handleITRTypeAheadSearch(input, dropdown) {
@@ -1251,6 +1415,13 @@
           document.getElementById('records-date-input').disabled = true;
           document.getElementById('records-search-btn').disabled = true;
           document.getElementById('records-table').querySelector('tbody').innerHTML = `<tr><td colspan="7" style="text-align: center;">Select a training from the dropdowns to view records.</td></tr>`;
+        } else if (tabId === 'participants-list') {
+            document.getElementById('participants-course-input').value = '';
+            const dateInput = document.getElementById('participants-date-input');
+            dateInput.innerHTML = '<option value="">Select a course first</option>';
+            dateInput.disabled = true;
+            document.getElementById('participants-search-btn').disabled = true;
+            document.getElementById('participants-table').querySelector('tbody').innerHTML = `<tr><td colspan="9" style="text-align: center;">Select a training course and date to view participants.</td></tr>`;
         }
       }
 
@@ -1362,14 +1533,15 @@
           
           const actionsCell = row.insertCell();
           const encodedRecord = btoa(JSON.stringify(training.details));
+          
           actionsCell.innerHTML = `
-            <button type="button" class="row-action-btn" onclick="openEditTrainingModal('${encodedRecord}')">Edit</button>
+            <button type="button" class="row-action-btn" onclick="openEditTrainingModal('${encodedRecord}', ${training.participants.length})">Edit</button>
             <button type="button" class="row-action-btn danger" onclick="deleteTrainingSession('${encodedRecord}')">Delete</button>
           `;
         });
       }
 
-      function openEditTrainingModal(encodedRecord) {
+      function openEditTrainingModal(encodedRecord, participantCount) {
         const modal = document.getElementById('edit-training-modal');
         const loadingOverlay = document.getElementById('edit-modal-loading');
         
@@ -1381,6 +1553,9 @@
         editedParticipants.toAdd = {};
         editedParticipants.toDelete = new Set();
         
+        const costPerParticipant = parseFloat(record.cost) || 0;
+        record.cost = costPerParticipant * participantCount;
+
         setupFormFields('edit-training-form', 'edit-', record);
         
         const participantsTableBody = document.getElementById('edit-participants-table').querySelector('tbody');
@@ -1586,8 +1761,12 @@
         const newParticipant = {
             employeecode: employee.employeeCode,
             employeename: employee.employeeName,
-            plant: employee.plant,
-            completionstatus: 'Completed',  
+            plant: employee.workLocation,
+            companyname: employee.companyName,
+            position: employee.position,
+            fabu: employee.fabu,
+            dept: employee.dept,
+            completionstatus: 'Completed',
             passed: 'YES',
             employmenttype: ''
         };
@@ -1682,15 +1861,26 @@
         const input = document.getElementById(inputId);
         const dropdown = document.getElementById(dropdownId);
         const data = referenceData[dataKey] || [];
+        const selectContainer = input.closest('.select-container');
+        const modalContent = input.closest('.modal-content');
         
         populateDropdown(dropdown, data);
         const openDropdown = () => {
+            if (modalContent) {
+                modalContent.querySelectorAll('.select-container').forEach(c => c.style.zIndex = '2');
+            }
+            selectContainer.style.zIndex = '3';
             filterDropdown(input, dropdown, data);
             dropdown.classList.add('open');
         };
         input.oninput = openDropdown;
         input.onfocus = openDropdown;
-        input.onblur = () => setTimeout(() => dropdown.classList.remove('open'), 200);
+        input.onblur = () => {
+          setTimeout(() => {
+            dropdown.classList.remove('open');
+            selectContainer.style.zIndex = '2';
+          }, 200);
+        };
         dropdown.onmousedown = (e) => selectOption(e, input, dropdown);
       }
       
