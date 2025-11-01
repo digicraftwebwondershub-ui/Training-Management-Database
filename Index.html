@@ -434,8 +434,8 @@
         { key: 'datestarted', id: 'date-started', label: 'Date Started', type: 'date', required: true },
         { key: 'dateended', id: 'date-ended', label: 'Date Ended', type: 'date', required: true },
         { key: 'trainingpurpose', id: 'training-purpose', label: 'Training Purpose', required: true, dynamic: true },
-        { key: 'timestarted', id: 'time-started', label: 'Time Started', type: 'time' },
-        { key: 'timeended', id: 'time-ended', label: 'Time Ended', type: 'time' },
+        { key: 'timestarted', id: 'time-started', label: 'Time Started', type: 'time', required: true },
+        { key: 'timeended', id: 'time-ended', label: 'Time Ended', type: 'time', required: true },
         { key: 'breakhours', id: 'break-hours', label: 'Break Hours', type: 'number' },
         { key: 'totalhrs', id: 'total-hrs', label: 'Total Hrs', type: 'number', readonly: true },
         { key: 'cost', id: 'cost', label: 'Cost', type: 'number' },
@@ -594,9 +594,32 @@
       }
       
       function setupTimeCalculationListeners(prefix) {
+        // --- START: New Validation Logic ---
+        const startDateInput = document.getElementById(prefix + 'date-started');
+        const endDateInput = document.getElementById(prefix + 'date-ended');
+
+        const validateDates = () => {
+          if (startDateInput.value && endDateInput.value) {
+            if (new Date(endDateInput.value) < new Date(startDateInput.value)) {
+              endDateInput.setCustomValidity('"Date Ended" cannot be before "Date Started".');
+            } else {
+              endDateInput.setCustomValidity('');
+            }
+          } else {
+            endDateInput.setCustomValidity('');
+          }
+          // We call reportValidity() to show the message immediately if the input is invalid
+          endDateInput.reportValidity(); 
+        };
+
+        if (startDateInput) startDateInput.addEventListener('input', validateDates);
+        if (endDateInput) endDateInput.addEventListener('input', validateDates);
+        // --- END: New Validation Logic ---
+
         ['date-started', 'date-ended', 'time-started', 'time-ended', 'break-hours'].forEach(id => {
           const el = document.getElementById(prefix + id);
-          if (el) el.addEventListener('input', () => calculateTotalHours(prefix));
+          // We also run calculateTotalHours here from the original function
+          if (el) el.addEventListener('input', () => calculateTotalHours(prefix)); 
         });
       }
 
