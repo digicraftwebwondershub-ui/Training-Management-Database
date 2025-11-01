@@ -30,7 +30,7 @@
       .form-group { display: flex; flex-direction: column; }
       label { font-size: 14px; font-weight: 500; margin-bottom: 8px; color: #555; }
       .required::after { content: ' *'; color: var(--danger-color); }
-      .select-container { position: relative; }
+      .select-container { position: relative; z-index: 2; }
       .select-input, input[type="text"], input[type="date"], input[type="time"], input[type="number"], select { padding: 12px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 14px; width: 100%; box-sizing: border-box; background-color: #fff; }
       .select-dropdown { position: absolute; width: 100%; max-height: 200px; overflow-y: auto; background-color: #fff; border: 1px solid var(--border-color); border-top: none; z-index: 1001; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); display: none; }
       .select-dropdown.open { display: block; }
@@ -123,6 +123,11 @@
       #edit-participants-table th, #edit-participants-table td {
         min-width: 80px;
       }
+      
+      #itr-results-container {
+        position: relative;
+        z-index: 1;
+      }
 
     </style>
   </head>
@@ -133,6 +138,7 @@
         <button class="nav-button active" onclick="openTab('dashboard', this)">Dashboard</button>
         <button class="nav-button" onclick="openTab('batch-encoding', this)">Batch Encoding</button>
         <button class="nav-button" onclick="openTab('records-management', this)">Records Management</button>
+        <button class="nav-button" onclick="openTab('individual-training-record', this)">Individual Training Record</button>
       </div>
       <div id="content-area">
 
@@ -221,6 +227,43 @@
                 </tbody>
               </table>
               <div id="records-status-message" class="status-message"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="individual-training-record" class="tab-content">
+          <h2>Individual Training Record</h2>
+          <div class="form-container">
+            <div class="records-filter-grid" style="grid-template-columns: 1fr auto;">
+              <div class="form-group select-container">
+                <label for="itr-search-input">Search by Employee Number or Name</label>
+                <input type="text" id="itr-search-input" class="select-input" placeholder="Enter employee number or name">
+                <div id="itr-search-dropdown" class="select-dropdown"></div>
+              </div>
+              <button id="itr-view-record-btn" class="action-button">View Record</button>
+            </div>
+            <div id="itr-status-message" class="status-message"></div>
+            <div id="itr-results-container" class="hidden">
+              <h3>Employee Information</h3>
+              <div class="form-grid" id="itr-employee-info">
+                </div>
+              <h3>Training History</h3>
+              <table id="itr-training-history-table" class="data-table">
+                <thead>
+                  <tr>
+                    <th>No</th>
+                    <th>Course Title</th>
+                    <th>Training Started</th>
+                    <th>Training Ended</th>
+                    <th>Training Duration</th>
+                    <th>Facilitator</th>
+                    <th>Training Category</th>
+                    <th>Remarks</th>
+                  </tr>
+                </thead>
+                <tbody>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -785,6 +828,112 @@
         // Event listeners for Manual Entry buttons
         document.getElementById('manual-entry-batch-btn').addEventListener('click', () => openManualEntryModal('batch'));
         document.getElementById('manual-entry-edit-btn').addEventListener('click', () => openManualEntryModal('edit'));
+        
+        const itrSearchInput = document.getElementById('itr-search-input');
+        const itrSearchDropdown = document.getElementById('itr-search-dropdown');
+        itrSearchInput.addEventListener('input', () => handleITRTypeAheadSearch(itrSearchInput, itrSearchDropdown));
+        itrSearchInput.addEventListener('blur', () => setTimeout(() => itrSearchDropdown.classList.remove('open'), 200));
+        document.getElementById('itr-view-record-btn').addEventListener('click', handleITRSearch);
+      }
+
+      function handleITRTypeAheadSearch(input, dropdown) {
+        const query = input.value.toLowerCase();
+        dropdown.innerHTML = '';
+        if (query.length < 2) {
+            dropdown.classList.remove('open');
+            return;
+        }
+
+        const filteredEmployees = allEmployees.filter(emp =>
+            (emp.employeeName && emp.employeeName.toLowerCase().includes(query)) ||
+            (emp.employeeCode && emp.employeeCode.toString().toLowerCase().includes(query))
+        ).slice(0, 10);
+
+        if (filteredEmployees.length > 0) {
+            filteredEmployees.forEach(emp => {
+                const option = document.createElement('div');
+                option.className = 'dropdown-option';
+                option.textContent = `${emp.employeeCode} - ${emp.employeeName}`;
+                option.addEventListener('mousedown', () => {
+                    input.value = emp.employeeCode;
+                    dropdown.classList.remove('open');
+                });
+                dropdown.appendChild(option);
+            });
+            dropdown.classList.add('open');
+        } else {
+            dropdown.classList.remove('open');
+        }
+      }
+
+      function handleITRSearch() {
+        const searchTerm = document.getElementById('itr-search-input').value;
+        const statusMessage = document.getElementById('itr-status-message');
+        const resultsContainer = document.getElementById('itr-results-container');
+        const employeeInfoContainer = document.getElementById('itr-employee-info');
+        const trainingHistoryTableBody = document.getElementById('itr-training-history-table').querySelector('tbody');
+
+        if (!searchTerm) {
+          statusMessage.textContent = 'Please enter an employee number or name.';
+          statusMessage.className = 'status-message error';
+          resultsContainer.classList.add('hidden');
+          return;
+        }
+
+        statusMessage.textContent = '';
+        statusMessage.className = 'status-message';
+        resultsContainer.classList.add('hidden');
+        
+        const viewRecordBtn = document.getElementById('itr-view-record-btn');
+        setButtonLoading(viewRecordBtn, 'Searching...');
+
+        google.script.run
+          .withSuccessHandler(data => {
+            setButtonLoaded(viewRecordBtn, 'View Record');
+            if (!data.employee) {
+              statusMessage.textContent = 'No training record found for this employee.';
+              statusMessage.className = 'status-message error';
+              return;
+            }
+
+            statusMessage.textContent = '';
+            statusMessage.className = 'status-message';
+            resultsContainer.classList.remove('hidden');
+
+            // Populate employee info
+            employeeInfoContainer.innerHTML = `
+              <div class="form-group"><label>Employee Number</label><input type="text" value="${data.employee.employeeNumber}" readonly></div>
+              <div class="form-group"><label>Employee Name</label><input type="text" value="${data.employee.employeeName}" readonly></div>
+              <div class="form-group"><label>Department</label><input type="text" value="${data.employee.department}" readonly></div>
+              <div class="form-group"><label>Position</label><input type="text" value="${data.employee.position}" readonly></div>
+              <div class="form-group"><label>FA/BU</label><input type="text" value="${data.employee.fabu}" readonly></div>
+              <div class="form-group"><label>Location</label><input type="text" value="${data.employee.location}" readonly></div>
+            `;
+
+            // Populate training history
+            trainingHistoryTableBody.innerHTML = '';
+            if (data.records.length > 0) {
+              data.records.forEach(record => {
+                const row = trainingHistoryTableBody.insertRow();
+                row.insertCell().textContent = record.no;
+                row.insertCell().textContent = record.courseTitle;
+                row.insertCell().textContent = record.trainingStarted;
+                row.insertCell().textContent = record.trainingEnded;
+                row.insertCell().textContent = record.trainingDuration;
+                row.insertCell().textContent = record.facilitator;
+                row.insertCell().textContent = record.trainingCategory;
+                row.insertCell().textContent = record.remarks;
+              });
+            } else {
+              trainingHistoryTableBody.innerHTML = '<tr><td colspan="8" style="text-align: center;">No training history found for this employee.</td></tr>';
+            }
+          })
+          .withFailureHandler(err => {
+            setButtonLoaded(viewRecordBtn, 'View Record');
+            statusMessage.textContent = `Error: ${err.message}`;
+            statusMessage.className = 'status-message error';
+          })
+          .getIndividualTrainingRecord(searchTerm);
       }
 
       function handleEmployeeSearch(query, dropdownId, buttonId) {
@@ -1203,7 +1352,14 @@
           row.insertCell().textContent = training.details.trainingfacilitator;
           row.insertCell().textContent = training.participants.length;
           row.insertCell().textContent = training.details.totalhrs;
-          row.insertCell().textContent = training.details.cost ? `₱${parseFloat(training.details.cost).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : '₱0.00';
+
+          // --- START: New Total Cost Calculation ---
+          const participantCount = training.participants.length;
+          const costPerParticipant = parseFloat(training.details.cost) || 0;
+          const totalCost = costPerParticipant * participantCount;
+          row.insertCell().textContent = `₱${totalCost.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+          // --- END: New Total Cost Calculation ---
+          
           const actionsCell = row.insertCell();
           const encodedRecord = btoa(JSON.stringify(training.details));
           actionsCell.innerHTML = `
