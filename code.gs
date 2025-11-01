@@ -4,7 +4,7 @@
  */
 
 // --- CONFIGURATION ---
-const SPREADSHEET_ID = '1ArFiRaHHRbr0QEKFtJvZR8wnmh2asmxJH-7yOw1jogc'; // Replace with your Spreadsheet ID
+const SPREADSHEET_ID = '13smCfWTRiFPF5GE21gExRbBbOJ8Lipa9EQPJDyW9IMo'; // Replace with your Spreadsheet ID
 const SHEET_NAMES = {
   RECORDS: 'Training_Records',
   EMPLOYEES: 'Employee_Database',
@@ -919,6 +919,95 @@ function getTrainingDatesForCourse(courseName) {
     Logger.log(`Error in getTrainingDatesForCourse: ${e.toString()}`);
     return [];
   }
+}
+
+function getParticipantsList(courseName, trainingDate) {
+  if (!courseName || !trainingDate) {
+    throw new Error('Training course and date are required.');
+  }
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const recordsSheet = ss.getSheetByName(SHEET_NAMES.RECORDS);
+  const employeeSheet = ss.getSheetByName(SHEET_NAMES.EMPLOYEES);
+
+  if (!recordsSheet || !employeeSheet) {
+    throw new Error('Required sheets not found.');
+  }
+
+  const employeeData = employeeSheet.getDataRange().getValues();
+  const empHeaders = employeeData.shift().map(h => String(h).trim().toUpperCase());
+  const empCodeIdx = empHeaders.indexOf('EMPLOYEE CODE');
+  const empLevelIdx = empHeaders.indexOf('LEVEL');
+  const empStatusIdx = empHeaders.indexOf('ACTIVE');
+  const empWorkLocationIdx = empHeaders.indexOf('WORK LOCATION');
+  const empFabuIdx = empHeaders.indexOf('FA/BU');
+  const empPositionIdx = empHeaders.indexOf('POSITION');
+  const empCompanyIdx = empHeaders.indexOf('COMPANY NAME');
+
+  const employeeMap = new Map();
+  employeeData.forEach(row => {
+    const code = row[empCodeIdx];
+    if (code) {
+      employeeMap.set(String(code).trim(), {
+        level: empLevelIdx > -1 ? row[empLevelIdx] : 'N/A',
+        status: row[empStatusIdx],
+        workLocation: row[empWorkLocationIdx],
+        fabu: row[empFabuIdx],
+        position: row[empPositionIdx],
+        companyName: row[empCompanyIdx]
+      });
+    }
+  });
+
+  const recordsData = recordsSheet.getDataRange().getValues();
+  const recHeaders = recordsData.shift();
+  const recCourseIdx = recHeaders.indexOf('TRAINING COURSE');
+  const recDateIdx = recHeaders.indexOf('DATE STARTED');
+  const recEmpCodeIdx = recHeaders.indexOf('EMPLOYEE CODE');
+  const recEmpNameIdx = recHeaders.indexOf('EMPLOYEE NAME');
+  const recWorkLocationIdx = recHeaders.indexOf('PLANT');
+  const recFabuIdx = recHeaders.indexOf('FA/BU');
+  const recPositionIdx = recHeaders.indexOf('POSITION');
+  const recCompanyIdx = recHeaders.indexOf('COMPANY NAME');
+
+  const spreadsheetTimezone = ss.getSpreadsheetTimeZone();
+  const formattedTrainingDate = Utilities.formatDate(new Date(trainingDate), spreadsheetTimezone, 'MM/dd/yyyy');
+
+  const participants = recordsData
+    .filter(row => {
+      const rowCourse = String(row[recCourseIdx]).trim();
+      if (!row[recDateIdx] || !(row[recDateIdx] instanceof Date)) return false;
+      const rowDate = Utilities.formatDate(new Date(row[recDateIdx]), spreadsheetTimezone, 'MM/dd/yyyy');
+      return rowCourse === courseName && rowDate === formattedTrainingDate;
+    })
+    .map(row => {
+      const empCode = String(row[recEmpCodeIdx]).trim();
+      const employeeDetails = employeeMap.get(empCode);
+
+      const recordData = {
+        workLocation: row[recWorkLocationIdx],
+        fabu: row[recFabuIdx],
+        position: row[recPositionIdx],
+        companyName: row[recCompanyIdx],
+        level: 'N/A',
+        status: 'N/A'
+      };
+
+      const finalData = employeeDetails ? employeeDetails : recordData;
+
+      return {
+        employeeNumber: empCode,
+        employeeName: row[recEmpNameIdx],
+        workLocation: finalData.workLocation,
+        fabu: finalData.fabu,
+        position: finalData.position,
+        level: finalData.level,
+        companyName: finalData.companyName,
+        status: String(finalData.status).trim().toUpperCase() === 'YES' ? 'Active' : 'Inactive'
+      };
+    });
+
+  return participants;
 }
 
 // --- HELPER & UTILITY FUNCTIONS ---
