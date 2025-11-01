@@ -468,7 +468,8 @@ function searchEmployees() {
       companyName: row[h.get('COMPANY NAME')],
       plant: row[h.get('WORK LOCATION')],
       dept: row[h.get('DEPT')],
-      position: row[h.get('POSITION')]
+      position: row[h.get('POSITION')],
+      fabu: row[h.get('FA/BU')] // <-- ADD THIS LINE
     }));
 }
 
@@ -525,10 +526,20 @@ function saveTrainingRecords(records) {
   const lastId = sheet.getRange(sheet.getLastRow(), 1).getValue();
   let startNumber = (typeof lastId === 'number' && lastId > 0) ? lastId + 1 : 1;
 
+  const participantCount = records.length; // <-- ADD THIS LINE
+
   const dataToAppend = records.map((record, index) => {
     if (new Date(record.dateended) < new Date(record.datestarted)) {
       throw new Error('Date Ended cannot be before Date Started.');
     }
+
+  // --- ADD THESE LINES to calculate cost per participant ---
+    let costPerParticipant = 0;
+    const totalCost = parseFloat(record.cost);
+    if (!isNaN(totalCost) && totalCost > 0 && participantCount > 0) {
+      costPerParticipant = totalCost / participantCount;
+    }
+  // --- END of new lines ---
 
     const preScore = parseFloat(record.pretestscore);
     const postScore = parseFloat(record.posttestscore);
@@ -539,6 +550,7 @@ function saveTrainingRecords(records) {
 
     const newRecord = {
       ...record,
+      cost: costPerParticipant, // <-- UPDATE THIS LINE
       finalratingremark: finalRatingRemark,
       no: startNumber + index
     };
