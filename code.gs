@@ -672,8 +672,17 @@ function updateTrainingRecord(updatedRecord, finalParticipantList) {
   const lastId = sheet.getLastRow() > 1 ? sheet.getRange(sheet.getLastRow(), 1).getValue() : 0;
   let startNumber = (typeof lastId === 'number' && lastId > 0) ? lastId + 1 : 1;
 
+// --- ADD THIS NEW BLOCK to calculate cost per participant ---
+    const participantCount = finalParticipantList.length;
+    let costPerParticipant = 0;
+    const totalCost = parseFloat(updatedRecord.cost);
+    if (!isNaN(totalCost) && totalCost > 0 && participantCount > 0) {
+      costPerParticipant = totalCost / participantCount;
+    }
+    // --- END of new block ---
+
   const dataToAppend = finalParticipantList.map((participant, index) => {
-    const fullRecord = { ...participant, ...updatedRecord, no: startNumber + index };
+    const fullRecord = { ...participant, ...updatedRecord, cost: costPerParticipant, no: startNumber + index };
     
     // Convert specific text fields to uppercase for consistency
     const fieldsToUppercase = ['employeecode', 'employeename', 'plant', 'companyname', 'position', 'fabu', 'dept'];
@@ -745,6 +754,95 @@ function deleteTrainingRecord(record) {
     return { status: 'error', message: 'Training session not found.' };
   }
 }
+
+function getIndividualTrainingRecord(searchTerm) {
+  if (!searchTerm || searchTerm.trim() === '') {
+    return { employee: null, records: [] };
+  }
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const employeeSheet = ss.getSheetByName(SHEET_NAMES.EMPLOYEES);
+  const recordsSheet = ss.getSheetByName(SHEET_NAMES.RECORDS);
+
+  if (!employeeSheet || !recordsSheet) {
+    throw new Error('Required sheets (Employee Database or Training Records) not found.');
+  }
+
+  // 1. Find the employee
+  const employeeData = employeeSheet.getDataRange().getValues();
+  const empHeaders = employeeData.shift().map(h => String(h).trim().toUpperCase());
+  const empCodeIdx = empHeaders.indexOf('EMPLOYEE CODE');
+  const empNameIdx = empHeaders.indexOf('EMPLOYEE NAME');
+  
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  let foundEmployeeRow = null;
+
+  for (const row of employeeData) {
+    const code = row[empCodeIdx] ? String(row[empCodeIdx]).trim().toLowerCase() : '';
+    const name = row[empNameIdx] ? String(row[empNameIdx]).trim().toLowerCase() : '';
+    if (code === normalizedSearch || name.includes(normalizedSearch)) {
+      foundEmployeeRow = row;
+      break;
+    }
+  }
+
+  if (!foundEmployeeRow) {
+    return { employee: null, records: [] };
+  }
+
+  // 2. Get Employee Details
+  const empDeptIdx = empHeaders.indexOf('DEPT');
+  const empPosIdx = empHeaders.indexOf('POSITION');
+  const empFabuIdx = empHeaders.indexOf('FA/BU');
+  const empLocIdx = empHeaders.indexOf('WORK LOCATION');
+
+  const employeeDetails = {
+    employeeNumber: foundEmployeeRow[empCodeIdx],
+    employeeName: foundEmployeeRow[empNameIdx],
+    department: foundEmployeeRow[empDeptIdx],
+    position: foundEmployeeRow[empPosIdx],
+    fabu: foundEmployeeRow[empFabuIdx],
+    location: foundEmployeeRow[empLocIdx]
+  };
+  
+  const employeeCode = employeeDetails.employeeNumber;
+
+  // 3. Get Training History
+  const recordsData = recordsSheet.getDataRange().getValues();
+  const recHeaders = recordsData.shift().map(h => String(h).trim().toUpperCase());
+  const recCodeIdx = recHeaders.indexOf('EMPLOYEE CODE');
+  const recCourseIdx = recHeaders.indexOf('TRAINING COURSE');
+  const recStartIdx = recHeaders.indexOf('DATE STARTED');
+  const recEndIdx = recHeaders.indexOf('DATE ENDED');
+  const recHoursIdx = recHeaders.indexOf('TOTAL HRS');
+  const recFacilitatorIdx = recHeaders.indexOf('TRAINING FACILITATOR');
+  const recCategoryIdx = recHeaders.indexOf('TRAINING CATEGORY');
+  const recCompletionStatusIdx = recHeaders.indexOf('COMPLETION STATUS');
+
+  const trainingHistory = recordsData
+    .filter(row => {
+      if (row[recCodeIdx] != employeeCode) return false;
+      const completionStatus = String(row[recCompletionStatusIdx]).trim().toLowerCase();
+      return completionStatus === 'completed' || completionStatus === 'completed (no assessment)';
+    })
+    .map((row, index) => {
+      const startDate = row[recStartIdx] instanceof Date ? Utilities.formatDate(row[recStartIdx], ss.getSpreadsheetTimeZone(), 'MM/dd/yyyy') : '';
+      const endDate = row[recEndIdx] instanceof Date ? Utilities.formatDate(row[recEndIdx], ss.getSpreadsheetTimeZone(), 'MM/dd/yyyy') : '';
+      return {
+        no: index + 1,
+        courseTitle: row[recCourseIdx],
+        trainingStarted: startDate,
+        trainingEnded: endDate,
+        trainingDuration: `${row[recHoursIdx]} hours`,
+        facilitator: row[recFacilitatorIdx],
+        trainingCategory: row[recCategoryIdx],
+        remarks: row[recCompletionStatusIdx]
+      };
+    });
+
+  return { employee: employeeDetails, records: trainingHistory };
+}
+
 
 // --- NEW FUNCTIONS FOR RECORDS MANAGEMENT ---
 /**
