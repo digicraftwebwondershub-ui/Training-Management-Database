@@ -134,7 +134,7 @@
   <body>
     <div id="main-container">
       <div id="sidebar">
-        <h1>HR System</h1>
+        <h1>Training Management System</h1>
         <button class="nav-button active" onclick="openTab('dashboard', this)">Dashboard</button>
         <button class="nav-button" onclick="openTab('batch-encoding', this)">Batch Encoding</button>
         <button class="nav-button" onclick="openTab('records-management', this)">Records Management</button>
@@ -249,6 +249,10 @@
               <div class="form-grid" id="itr-employee-info">
                 </div>
               <h3>Training History</h3>
+              <div style="display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 15px;">
+                <button id="itr-export-pdf-btn" class="action-button" style="background-color: #C62828;" disabled>Export to PDF</button>
+                <button id="itr-export-sheet-btn" class="action-button" style="background-color: #2E7D32;" disabled>Export to Google Sheet</button>
+              </div>
               <table id="itr-training-history-table" class="data-table">
                 <thead>
                   <tr>
@@ -504,6 +508,7 @@
       let referenceData = {}, allEmployees = [], allCourseNames = [];
       let categoryChart, conductChart, deptChart;
       let currentEditTraining = {};
+      let currentITRData = {}; // To store the currently viewed employee's data
       let currentParticipants = [];
       let manualEntryContext = ''; // 'batch' or 'edit'
       
@@ -933,6 +938,10 @@
         });
 
         participantsSearchBtn.addEventListener('click', handleViewParticipants);
+
+        // Export buttons in Individual Training Record
+        document.getElementById('itr-export-pdf-btn').addEventListener('click', handleExportToPdf);
+        document.getElementById('itr-export-sheet-btn').addEventListener('click', handleExportToSheet);
       }
 
       function getTrainingDatesForParticipants(courseName) {
@@ -1000,6 +1009,71 @@
           .getParticipantsList(course, date);
       }
 
+      function handleExportToPdf() {
+        if (!currentITRData.employee) {
+          alert('Please view an employee record before exporting.');
+          return;
+        }
+
+        const pdfBtn = document.getElementById('itr-export-pdf-btn');
+        setButtonLoading(pdfBtn, 'Generating PDF...');
+
+        google.script.run
+          .withSuccessHandler(pdfData => {
+            setButtonLoaded(pdfBtn, 'Export to PDF');
+            if (pdfData && pdfData.data) {
+              const byteCharacters = atob(pdfData.data);
+              const byteNumbers = new Array(byteCharacters.length);
+              for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+              }
+              const byteArray = new Uint8Array(byteNumbers);
+              const blob = new Blob([byteArray], { type: 'application/pdf' });
+              const url = URL.createObjectURL(blob);
+              
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `Training_Record_${currentITRData.employee.employeeNumber}.pdf`;
+              document.body.appendChild(a);
+              a.click();
+              window.URL.revokeObjectURL(url);
+              document.body.removeChild(a);
+            } else {
+              alert('Could not generate PDF.');
+            }
+          })
+          .withFailureHandler(err => {
+            setButtonLoaded(pdfBtn, 'Export to PDF');
+            alert(`Error generating PDF: ${err.message}`);
+          })
+          .exportTrainingRecordToPdf(currentITRData.employee, currentITRData.records);
+      }
+
+      function handleExportToSheet() {
+        if (!currentITRData.employee) {
+          alert('Please view an employee record before exporting.');
+          return;
+        }
+        
+        const sheetBtn = document.getElementById('itr-export-sheet-btn');
+        setButtonLoading(sheetBtn, 'Creating Sheet...');
+
+        google.script.run
+          .withSuccessHandler(sheetUrl => {
+            setButtonLoaded(sheetBtn, 'Export to Google Sheet');
+            if (sheetUrl && sheetUrl.url) {
+              window.open(sheetUrl.url, '_blank');
+            } else {
+              alert('Could not create Google Sheet.');
+            }
+          })
+          .withFailureHandler(err => {
+            setButtonLoaded(sheetBtn, 'Export to Google Sheet');
+            alert(`Error creating Google Sheet: ${err.message}`);
+          })
+          .exportTrainingRecordToSheet(currentITRData.employee, currentITRData.records);
+      }
+
       function handleITRTypeAheadSearch(input, dropdown) {
         const query = input.value.toLowerCase();
         dropdown.innerHTML = '';
@@ -1036,6 +1110,11 @@
         const resultsContainer = document.getElementById('itr-results-container');
         const employeeInfoContainer = document.getElementById('itr-employee-info');
         const trainingHistoryTableBody = document.getElementById('itr-training-history-table').querySelector('tbody');
+        const exportPdfBtn = document.getElementById('itr-export-pdf-btn');
+        const exportSheetBtn = document.getElementById('itr-export-sheet-btn');
+
+        exportPdfBtn.disabled = true;
+        exportSheetBtn.disabled = true;
 
         if (!searchTerm) {
           statusMessage.textContent = 'Please enter an employee number or name.';
@@ -1054,11 +1133,16 @@
         google.script.run
           .withSuccessHandler(data => {
             setButtonLoaded(viewRecordBtn, 'View Record');
+            currentITRData = {}; // Clear previous data
             if (!data.employee) {
               statusMessage.textContent = 'No training record found for this employee.';
               statusMessage.className = 'status-message error';
+              exportPdfBtn.disabled = true;
+              exportSheetBtn.disabled = true;
               return;
             }
+
+            currentITRData = data; // Store the fetched data globally
 
             statusMessage.textContent = '';
             statusMessage.className = 'status-message';
@@ -1077,6 +1161,8 @@
             // Populate training history
             trainingHistoryTableBody.innerHTML = '';
             if (data.records.length > 0) {
+              exportPdfBtn.disabled = false;
+              exportSheetBtn.disabled = false;
               data.records.forEach(record => {
                 const row = trainingHistoryTableBody.insertRow();
                 row.insertCell().textContent = record.no;
