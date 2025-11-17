@@ -186,7 +186,7 @@
               <button type="button" id="manual-entry-batch-btn" class="action-button" style="background-color: #555;">Manual Entry</button>
             </div>
             <table id="selected-employees-table" class="data-table">
-              <thead><tr><th>Employee Code</th><th>Name</th><th>Plant</th><th>Status</th><th>Completion</th><th>Passed</th><th>Employment</th><th>Action</th></tr></thead>
+              <thead><tr><th>No.</th><th>Employee Code</th><th>Name</th><th>Plant</th><th>Status</th><th>Completion</th><th>Passed</th><th>Employment</th><th>Action</th></tr></thead>
               <tbody></tbody>
             </table>
             <button id="submit-btn" class="action-button" style="width: 100%; margin-top: 25px;">Submit Training Records</button>
@@ -804,6 +804,7 @@
               const empCode = removeBtn.dataset.empCode;
               delete employeeRecords[empCode];
               removeBtn.closest('tr').remove();
+              renumberBatchTable();
               return;
             }
         });
@@ -1214,6 +1215,17 @@
         } else { dropdown.classList.remove('open'); }
       }
 
+      function renumberBatchTable() {
+        const tableBody = document.getElementById('selected-employees-table').querySelector('tbody');
+        const rows = tableBody.querySelectorAll('tr');
+        rows.forEach((row, index) => {
+            const firstCell = row.cells[0];
+            if (firstCell) {
+                firstCell.textContent = index + 1;
+            }
+        });
+      }
+
       function addParticipantToBatchTable(employee) {
         if (!employee || !employee.employeeCode) return;
 
@@ -1227,6 +1239,7 @@
         const newRow = tableBody.insertRow();
         newRow.dataset.employeeCode = employee.employeeCode;
 
+        newRow.insertCell(); // For the "No." column
         newRow.insertCell().textContent = employee.employeeCode;
         newRow.insertCell().textContent = employee.employeeName;
         newRow.insertCell().textContent = employee.workLocation;
@@ -1260,6 +1273,8 @@
             <button type="button" class="row-action-btn add-scores-btn" data-emp-code="${employee.employeeCode}">Add Scores</button>
             <button type="button" class="row-action-btn danger remove-btn" data-emp-code="${employee.employeeCode}">Remove</button>
         `;
+
+        renumberBatchTable();
       }
 
       function handleAddEmployee() {
