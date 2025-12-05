@@ -1284,6 +1284,13 @@
         const employee = allEmployees.find(emp => emp.employeeCode.toString() === employeeCode);
         if (!employee) return;
 
+        // --- NEW CODE START ---
+        // Fix: If trackingId is missing, use the employeeCode
+        if (!employee.trackingId) {
+            employee.trackingId = employee.employeeCode;
+        }
+        // --- NEW CODE END ---
+
         addParticipantToBatchTable(employee);
 
         document.getElementById('employee-search-input').value = '';
